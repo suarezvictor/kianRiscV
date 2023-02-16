@@ -16,37 +16,11 @@
  *  or in connection with the use or performance of this software.
  *
  */
-#include <errno.h>
-#include <fcntl.h>
-#include <stdbool.h>
+ 
+#ifndef __RV32I_KIAN_H__
+#define __RV32I_KIAN_H__
+
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/ioctl.h>
-#include <sys/wait.h>
-#include <termios.h>
-#include <unistd.h>
-
-int fileno(FILE *stream);
-
-#define SB(offset, data) *(uint8_t *)(memory + offset) = data
-#define SH(offset, data) *(uint16_t *)(memory + offset) = data
-#define SW(offset, data) *(uint32_t *)(memory + offset) = data
-
-#define LB(offset) *(int8_t *)(memory + offset)
-#define LH(offset) *(int16_t *)(memory + offset)
-#define LW(offset) *(uint32_t *)(memory + offset)
-#define LBU(offset) *(uint8_t *)(memory + offset)
-#define LHU(offset) *(uint16_t *)(memory + offset)
-
-#define MEM_SIZE (1024 * 1024 * 32)
-#define EXCEPTION(l)                                                           \
-  do {                                                                         \
-    printf("Exception found in %d\n", l);                                      \
-    for (;;)                                                                   \
-      ;                                                                        \
-  } while (0)
 
 typedef enum {
   kLoad = 0b0000011,
@@ -94,62 +68,12 @@ typedef enum {
 
 typedef enum { RTYPE, ITYPE, STYPE, BTYPE, UTYPE, JTYPE } IMMSRC_t;
 
-uint8_t *memory;
-uint32_t test_memory;
-uint32_t RegisterFile[32];
-uint32_t PC;
 
-static void ResetKeyboardTerm() {
-  struct termios term;
-  tcgetattr(0, &term);
-  term.c_lflag |= ICANON | ECHO;
-  tcsetattr(0, TCSANOW, &term);
-}
-
-void SetKeyboardTerm() {
-  struct termios term;
-  tcgetattr(0, &term);
-  term.c_lflag &= ~(ICANON | ECHO);
-  tcsetattr(0, TCSANOW, &term);
-}
-
-uint32_t MEMORY_IOMEM_LOAD(uint32_t addr) {
-  //   printf("LOAD MEMORY_IOMEM:%08x\n", addr);
-  if (addr == 0x10000000) {
-    return test_memory;
-  } else if (addr == 0x30000000) {
-    return 1;
-  } else if (addr == 0x3000003C) {
-    char c;
-    read(fileno(stdin), (char *)&c, 1) > 0 ? c : EOF;
-    return c == EOF ? ~0 : c;
-  } else {
-    printf("read to none supported hw address:%08x\n", addr);
-    EXCEPTION(__LINE__);
-  }
-  return 0;
-}
-
-void MEMORY_IOMEM_STORE(uint32_t addr, uint32_t data) {
-  if (addr == 0x10000000) {
-    test_memory = (test_memory << 8) | (data & 0xff);
-  } else if (addr == 0x30000000) {
-    printf("%c", data);
-    fflush(stdout);
-  } else {
-    printf("write to none supported hw address:%08x\n", addr);
-    EXCEPTION(__LINE__);
-  }
-}
-
-void ebreak() {
-  if ((test_memory & 0x00ffffff) == 0x4f4b0a)
-    printf("passed\n");
-  else
-    printf("failed\n");
-  fflush(stdout);
-  exit(0);
-}
+struct rv32i_kian_state_t
+{
+  uint32_t RegisterFile[32];
+  uint32_t PC;
+};
 
 uint32_t GetMask(uint32_t n) { return 0xffffffffUL >> (32 - n); }
 
@@ -160,9 +84,8 @@ uint32_t GetBits(uint32_t v, uint32_t h, uint32_t l) {
 
 uint32_t GetBit(uint32_t v, uint32_t n) { return (v >> n) & 0x01; }
 
-uint32_t RegisterFile[32];
 
-void execute(uint32_t instr) {
+void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
   uint32_t rs1 = GetBits(instr, 19, 15);
   uint32_t rs2 = GetBits(instr, 24, 20);
   uint32_t rd = GetBits(instr, 11, 7);
@@ -371,10 +294,10 @@ void execute(uint32_t instr) {
   default:
     EXCEPTION(__LINE__);
   }
-  uint32_t a = is_auipc | is_jal | is_jalr ? PC : RegisterFile[rs1];
+  uint32_t a = is_auipc | is_jal | is_jalr ? state->PC : state->RegisterFile[rs1];
   uint32_t b = is_itype | is_load | is_store | is_auipc | is_lui ? immext
                : is_jal | is_jalr                                ? 4
-                                  : RegisterFile[rs2];
+                                  : state->RegisterFile[rs2];
   uint32_t result = 0;
 
   switch (aluControl) {
@@ -453,19 +376,19 @@ void execute(uint32_t instr) {
   if (is_store) {
     if (addr >= 10000000) {
       if (is_sb) {
-        MEMORY_IOMEM_STORE(addr, (uint8_t)RegisterFile[rs2]);
+        MEMORY_IOMEM_STORE(addr, (uint8_t)state->RegisterFile[rs2]);
       } else if (is_sh) {
-        MEMORY_IOMEM_STORE(addr, (uint16_t)RegisterFile[rs2]);
+        MEMORY_IOMEM_STORE(addr, (uint16_t)state->RegisterFile[rs2]);
       } else if (is_sw) {
-        MEMORY_IOMEM_STORE(addr, (uint32_t)RegisterFile[rs2]);
+        MEMORY_IOMEM_STORE(addr, (uint32_t)state->RegisterFile[rs2]);
       }
     } else {
       if (is_sb) {
-        SB(addr, RegisterFile[rs2]);
+        SB(addr, state->RegisterFile[rs2]);
       } else if (is_sh) {
-        SH(addr, RegisterFile[rs2]);
+        SH(addr, state->RegisterFile[rs2]);
       } else if (is_sw) {
-        SW(addr, RegisterFile[rs2]);
+        SW(addr, state->RegisterFile[rs2]);
       }
     }
   } else if (is_load) {
@@ -498,37 +421,13 @@ void execute(uint32_t instr) {
 
   if (is_rtype | is_itype | is_load | is_jal | is_jalr | is_lui | is_auipc) {
     if (rd) {
-      RegisterFile[rd] = result;
+      state->RegisterFile[rd] = result;
     }
   }
 
-  PC = is_jal || (is_branch && !zero) ? PC += immext
-       : is_jalr                      ? RegisterFile[rs1] + immext
-                                      : PC + 4;
+  state->PC = is_jal || (is_branch && !zero) ? state->PC += immext
+       : is_jalr                      ? state->RegisterFile[rs1] + immext
+                                      : state->PC + 4;
 }
 
-uint32_t GetInstr() { return LW(PC); }
-void LoadFirmware(char *firmware) {
-  FILE *fp = fopen(firmware, "rb");
-  fseek(fp, 0, SEEK_END);
-  long size = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
-  fread(memory, size, 1, fp);
-  fclose(fp);
-}
-
-int main(int argc, char **argv) {
-  atexit(ResetKeyboardTerm);
-  SetKeyboardTerm();
-  memory = malloc(MEM_SIZE);
-  memset(memory, 0, MEM_SIZE);
-
-  LoadFirmware("firmware.bin");
-
-  PC = 0;
-  do {
-    execute(GetInstr());
-  } while (1);
-
-  return 0;
-}
+#endif //__RV32I_KIAN_H__
