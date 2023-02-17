@@ -136,6 +136,7 @@ int main(int argc, char **argv) {
   cpu.PC = 0;
   do {
     rv32i_kian_execute(&cpu, GetInstr(&cpu));
+    rv32i_kian_retire(&cpu);
   } while (1);
 
   return 0;

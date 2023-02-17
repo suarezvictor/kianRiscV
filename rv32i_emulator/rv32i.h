@@ -73,6 +73,9 @@ struct rv32i_kian_state_t
 {
   uint32_t RegisterFile[32];
   uint32_t PC;
+  uint32_t busaddr;
+  uint8_t wb_reg; //register to write results, if any
+  int rd_len;
 };
 
 uint32_t GetMask(uint32_t n) { return 0xffffffffUL >> (32 - n); }
@@ -373,6 +376,7 @@ void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
   bool is_sw = funct3 == 0b10;
 
   uint32_t addr = result;
+  state->rd_len = 0;
   if (is_store) {
 #ifdef RISCV32_KIAN_IO_BASE  
     if (addr >= RISCV32_KIAN_IO_BASE) {
@@ -395,27 +399,13 @@ void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
       }
     }
   } else if (is_load) {
-#ifdef RISCV32_KIAN_IO_BASE  
-    if (addr >= RISCV32_KIAN_IO_BASE) {
-      if (is_lb | is_lbu) {
-        result = is_lb ? (uint8_t)MEMORY_IOMEM_LOAD(state, addr)
-                       : (int16_t)MEMORY_IOMEM_LOAD(state, addr);
-      } else if (is_lh | is_lhu) {
-        result = is_lh ? (uint16_t)MEMORY_IOMEM_LOAD(state, addr)
-                       : (int16_t)MEMORY_IOMEM_LOAD(state, addr);
-      } else if (is_lw) {
-        result = MEMORY_IOMEM_LOAD(state, addr);
-      }
-    } else
-#endif
-    {
-      if (is_lb | is_lbu) {
-        result = is_lb ? LB(state, addr) : LBU(state, addr);
-      } else if (is_lh | is_lhu) {
-        result = is_lh ? LH(state, addr) : LHU(state, addr);
-      } else if (is_lw) {
-        result = LW(state, addr);
-      }
+   {
+      state->busaddr = addr;
+      if (is_lb) state->rd_len = -1;
+      if (is_lbu) state->rd_len = 1;
+      if (is_lh) state->rd_len = -2;
+      if (is_lhu) state->rd_len = 2;
+      if (is_lw) state->rd_len = 4;
     }
   } else if (is_lui) {
   } else if (is_auipc) {
@@ -425,15 +415,43 @@ void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
   } else if (is_branch) {
   }
 
-  if (is_rtype | is_itype | is_load | is_jal | is_jalr | is_lui | is_auipc) {
+  if (is_rtype | is_itype | is_jal | is_jalr | is_lui | is_auipc) {
     if (rd) {
       state->RegisterFile[rd] = result;
     }
   }
+  state->wb_reg = is_load ? rd : 0;
+
 
   state->PC = is_jal || (is_branch && !zero) ? state->PC += immext
        : is_jalr                      ? state->RegisterFile[rs1] + immext
                                       : state->PC + 4;
+}
+
+void rv32i_kian_retire(struct rv32i_kian_state_t *state)
+{
+    uint32_t result;
+    if (!state->wb_reg)
+      return;
+
+#ifdef RISCV32_KIAN_IO_BASE    
+    int is_io = state->busaddr >= RISCV32_KIAN_IO_BASE;
+    if(is_io)
+      result = MEMORY_IOMEM_LOAD(state, state->busaddr);
+#else
+	int is_io = 0;
+#endif
+
+    switch(state->rd_len)
+    {
+    	case 4: result = is_io ? (uint32_t) result : LW(state, state->busaddr); break;
+    	case 2: result = is_io ? (uint16_t) result : LHU(state, state->busaddr); break;
+    	case 1: result = is_io ? (uint8_t) result : LBU(state, state->busaddr); break;
+    	case -1: result = is_io ? (int8_t) result : LB(state, state->busaddr); break;
+    	case -2: result = is_io ? (int16_t) result : LW(state, state->busaddr); break;
+    }
+
+    state->RegisterFile[state->wb_reg] = result;
 }
 
 #endif //__RV32I_KIAN_H__
