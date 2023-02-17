@@ -374,41 +374,47 @@ void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
 
   uint32_t addr = result;
   if (is_store) {
-    if (addr >= 10000000) {
+#ifdef RISCV32_KIAN_IO_BASE  
+    if (addr >= RISCV32_KIAN_IO_BASE) {
       if (is_sb) {
-        MEMORY_IOMEM_STORE(addr, (uint8_t)state->RegisterFile[rs2]);
+        MEMORY_IOMEM_STORE(state, addr, (uint8_t)state->RegisterFile[rs2]);
       } else if (is_sh) {
-        MEMORY_IOMEM_STORE(addr, (uint16_t)state->RegisterFile[rs2]);
+        MEMORY_IOMEM_STORE(state, addr, (uint16_t)state->RegisterFile[rs2]);
       } else if (is_sw) {
-        MEMORY_IOMEM_STORE(addr, (uint32_t)state->RegisterFile[rs2]);
+        MEMORY_IOMEM_STORE(state, addr, (uint32_t)state->RegisterFile[rs2]);
       }
-    } else {
+    } else
+#endif
+    {
       if (is_sb) {
-        SB(addr, state->RegisterFile[rs2]);
+        SB(state, addr, state->RegisterFile[rs2]);
       } else if (is_sh) {
-        SH(addr, state->RegisterFile[rs2]);
+        SH(state, addr, state->RegisterFile[rs2]);
       } else if (is_sw) {
-        SW(addr, state->RegisterFile[rs2]);
+        SW(state, addr, state->RegisterFile[rs2]);
       }
     }
   } else if (is_load) {
-    if (addr >= 10000000) {
+#ifdef RISCV32_KIAN_IO_BASE  
+    if (addr >= RISCV32_KIAN_IO_BASE) {
       if (is_lb | is_lbu) {
-        result = is_lb ? (uint8_t)MEMORY_IOMEM_LOAD(addr)
-                       : (int16_t)MEMORY_IOMEM_LOAD(addr);
+        result = is_lb ? (uint8_t)MEMORY_IOMEM_LOAD(state, addr)
+                       : (int16_t)MEMORY_IOMEM_LOAD(state, addr);
       } else if (is_lh | is_lhu) {
-        result = is_lh ? (uint16_t)MEMORY_IOMEM_LOAD(addr)
-                       : (int16_t)MEMORY_IOMEM_LOAD(addr);
+        result = is_lh ? (uint16_t)MEMORY_IOMEM_LOAD(state, addr)
+                       : (int16_t)MEMORY_IOMEM_LOAD(state, addr);
       } else if (is_lw) {
-        result = MEMORY_IOMEM_LOAD(addr);
+        result = MEMORY_IOMEM_LOAD(state, addr);
       }
-    } else {
+    } else
+#endif
+    {
       if (is_lb | is_lbu) {
-        result = is_lb ? LB(addr) : LBU(addr);
+        result = is_lb ? LB(state, addr) : LBU(state, addr);
       } else if (is_lh | is_lhu) {
-        result = is_lh ? LH(addr) : LHU(addr);
+        result = is_lh ? LH(state, addr) : LHU(state, addr);
       } else if (is_lw) {
-        result = LW(addr);
+        result = LW(state, addr);
       }
     }
   } else if (is_lui) {

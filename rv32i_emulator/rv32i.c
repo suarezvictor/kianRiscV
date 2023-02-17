@@ -30,16 +30,19 @@
 
 
 int fileno(FILE *stream);
+struct rv32i_kian_state_t;
 
-#define SB(offset, data) *(uint8_t *)(memory + offset) = data
-#define SH(offset, data) *(uint16_t *)(memory + offset) = data
-#define SW(offset, data) *(uint32_t *)(memory + offset) = data
+#define RISCV32_KIAN_IO_BASE 10000000
 
-#define LB(offset) *(int8_t *)(memory + offset)
-#define LH(offset) *(int16_t *)(memory + offset)
-#define LW(offset) *(uint32_t *)(memory + offset)
-#define LBU(offset) *(uint8_t *)(memory + offset)
-#define LHU(offset) *(uint16_t *)(memory + offset)
+#define SB(state, offset, data) *(uint8_t *)(memory + offset) = data
+#define SH(state, offset, data) *(uint16_t *)(memory + offset) = data
+#define SW(state, offset, data) *(uint32_t *)(memory + offset) = data
+
+#define LB(state, offset) *(int8_t *)(memory + offset)
+#define LH(state, offset) *(int16_t *)(memory + offset)
+#define LW(state, offset) *(uint32_t *)(memory + offset)
+#define LBU(state, offset) *(uint8_t *)(memory + offset)
+#define LHU(state, offset) *(uint16_t *)(memory + offset)
 
 #define MEM_SIZE (1024 * 1024 * 32)
 #define EXCEPTION(l)                                                           \
@@ -66,7 +69,9 @@ void SetKeyboardTerm() {
   tcsetattr(0, TCSANOW, &term);
 }
 
-uint32_t MEMORY_IOMEM_LOAD(uint32_t addr) {
+uint32_t MEMORY_IOMEM_LOAD(struct rv32i_kian_state_t *state, uint32_t addr) {
+  (void) state; //unused
+
   //   printf("LOAD MEMORY_IOMEM:%08x\n", addr);
   if (addr == 0x10000000) {
     return test_memory;
@@ -83,7 +88,9 @@ uint32_t MEMORY_IOMEM_LOAD(uint32_t addr) {
   return 0;
 }
 
-void MEMORY_IOMEM_STORE(uint32_t addr, uint32_t data) {
+void MEMORY_IOMEM_STORE(struct rv32i_kian_state_t *state, uint32_t addr, uint32_t data) {
+  (void) state; //unused
+  
   if (addr == 0x10000000) {
     test_memory = (test_memory << 8) | (data & 0xff);
   } else if (addr == 0x30000000) {
@@ -106,7 +113,7 @@ void ebreak() {
   exit(0);
 }
 
-uint32_t GetInstr(struct rv32i_kian_state_t *state) { return LW(state->PC); }
+uint32_t GetInstr(struct rv32i_kian_state_t *state) { return LW(state, state->PC); }
 
 void LoadFirmware(char *firmware) {
   FILE *fp = fopen(firmware, "rb");
