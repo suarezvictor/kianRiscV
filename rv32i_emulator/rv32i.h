@@ -75,7 +75,7 @@ struct rv32i_kian_state_t
   uint32_t PC, PC_next;
   uint32_t busaddr, wdata;
   uint8_t wb_reg; //register to write results, if any
-  int8_t rd_len, wr_len;
+  int8_t rd_len, wr_len, wmask;
 };
 
 uint32_t GetMask(uint32_t n) { return 0xffffffffUL >> (32 - n); }
@@ -380,15 +380,18 @@ void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
   state->wr_len = 0;
   if (is_store) {
       state->busaddr = addr;
-      if (is_sb) {
+      state->wdata = state->RegisterFile[rs2] << ((addr&3)<<3);
+      state->wr_len = 4;
+      state->wmask = 15;
+      if (is_sb)
+      {
         state->wr_len = 1;
-        state->wdata = (uint8_t)state->RegisterFile[rs2];
-      } else if (is_sh) {
+        state->wmask = 3 << (addr & 2);
+      }
+      if (is_sh)
+      {
         state->wr_len = 2;
-        state->wdata = (uint16_t)state->RegisterFile[rs2];
-      } else if (is_sw) {
-        state->wr_len = 4;
-        state->wdata = (uint32_t)state->RegisterFile[rs2];
+        state->wmask = 1 << (addr & 3);
       }
   } else if (is_load) {
       state->busaddr = addr;
@@ -436,6 +439,7 @@ void rv32i_kian_retire(struct rv32i_kian_state_t *state)
     	case 1: SB(state, state->busaddr, state->wdata); break;
     }
     state->wr_len = 0;
+    state->wmask = 0;
     
     if (!state->wb_reg)
       return;
