@@ -87,16 +87,33 @@ uint32_t GetBits(uint32_t v, uint32_t h, uint32_t l) {
 
 uint32_t GetBit(uint32_t v, uint32_t n) { return (v >> n) & 0x01; }
 
+union instr_bits
+{
+  uint32_t raw;
+  struct
+  {
+     uint32_t op : 7;
+     uint32_t rd : 5;
+     uint32_t funct3 : 3;
+     uint32_t rs1 : 5;
+     uint32_t rs2 : 5;
+     uint32_t funct7b1 : 1;
+     uint32_t  : 4;
+     uint32_t funct7b5 : 1;
+  };
+};
 
 void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
-  uint32_t rs1 = GetBits(instr, 19, 15);
-  uint32_t rs2 = GetBits(instr, 24, 20);
-  uint32_t rd = GetBits(instr, 11, 7);
+  union instr_bits ir = { .raw = instr };
 
-  uint32_t op = GetBits(instr, 6, 0);
-  uint32_t funct3 = GetBits(instr, 14, 12);
-  uint32_t funct7b5 = GetBit(instr, 30);
-  uint32_t funct7b1 = GetBit(instr, 25);
+  uint32_t rs1 = ir.rs1; //GetBits(instr, 19, 15);
+  uint32_t rs2 = ir.rs2; //GetBits(instr, 24, 20);
+  uint32_t rd = ir.rd; //GetBits(instr, 11, 7);
+
+  uint32_t op = ir.op; //GetBits(instr, 6, 0);
+  uint32_t funct3 = ir.funct3; //GetBits(instr, 14, 12);
+  uint32_t funct7b5 = ir.funct7b5; // GetBit(instr, 30);
+  uint32_t funct7b1 = ir.funct7b1; //GetBit(instr, 25);
   uint32_t opbit5 = GetBit(op, 5);
 
   bool is_load = false;
