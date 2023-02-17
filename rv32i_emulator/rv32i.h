@@ -72,7 +72,7 @@ typedef enum { RTYPE, ITYPE, STYPE, BTYPE, UTYPE, JTYPE } IMMSRC_t;
 struct rv32i_kian_state_t
 {
   uint32_t RegisterFile[32];
-  uint32_t PC;
+  uint32_t PC, PC_next;
   uint32_t busaddr, wdata;
   uint8_t wb_reg; //register to write results, if any
   int8_t rd_len, wr_len;
@@ -413,7 +413,7 @@ void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
   state->wb_reg = is_load ? rd : 0;
 
 
-  state->PC = is_jal || (is_branch && !zero) ? state->PC += immext
+  state->PC_next = is_jal || (is_branch && !zero) ? state->PC += immext
        : is_jalr                      ? state->RegisterFile[rs1] + immext
                                       : state->PC + 4;
 }
@@ -421,38 +421,43 @@ void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
 void rv32i_kian_retire(struct rv32i_kian_state_t *state)
 {
     uint32_t result;
+    state->PC = state->PC_next;
+    
 #ifdef RISCV32_KIAN_IO_BASE    
-    int is_io = state->busaddr >= RISCV32_KIAN_IO_BASE;
-#else
-	int is_io = 0;
-#endif
-
+    bool is_io = state->busaddr >= RISCV32_KIAN_IO_BASE;
 	if(is_io && state->wr_len)
 		MEMORY_IOMEM_STORE(state, state->busaddr, state->wdata);
 	else
+#endif
     switch(state->wr_len)
     {
     	case 4: SW(state, state->busaddr, state->wdata); break;
     	case 2: SH(state, state->busaddr, state->wdata); break;
     	case 1: SB(state, state->busaddr, state->wdata); break;
     }
+    state->wr_len = 0;
     
     if (!state->wb_reg)
       return;
 
+#ifdef RISCV32_KIAN_IO_BASE    
     if(is_io)
       result = MEMORY_IOMEM_LOAD(state, state->busaddr);
-
+#else
+	bool is_io = false;
+#endif
     switch(state->rd_len)
     {
     	case 4: result = is_io ? (uint32_t) result : LW(state, state->busaddr); break;
     	case 2: result = is_io ? (uint16_t) result : LHU(state, state->busaddr); break;
     	case 1: result = is_io ? (uint8_t) result : LBU(state, state->busaddr); break;
     	case -1: result = is_io ? (int8_t) result : LB(state, state->busaddr); break;
-    	case -2: result = is_io ? (int16_t) result : LW(state, state->busaddr); break;
+    	case -2: result = is_io ? (int16_t) result : LH(state, state->busaddr); break;
     }
 
     state->RegisterFile[state->wb_reg] = result;
+    state->rd_len = 0;
+    state->wb_reg = 0;
 }
 
 #endif //__RV32I_KIAN_H__
