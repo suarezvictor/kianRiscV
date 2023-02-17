@@ -73,9 +73,9 @@ struct rv32i_kian_state_t
 {
   uint32_t RegisterFile[32];
   uint32_t PC;
-  uint32_t busaddr;
+  uint32_t busaddr, wdata;
   uint8_t wb_reg; //register to write results, if any
-  int rd_len;
+  int8_t rd_len, wr_len;
 };
 
 uint32_t GetMask(uint32_t n) { return 0xffffffffUL >> (32 - n); }
@@ -377,36 +377,26 @@ void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
 
   uint32_t addr = result;
   state->rd_len = 0;
+  state->wr_len = 0;
   if (is_store) {
-#ifdef RISCV32_KIAN_IO_BASE  
-    if (addr >= RISCV32_KIAN_IO_BASE) {
+      state->busaddr = addr;
       if (is_sb) {
-        MEMORY_IOMEM_STORE(state, addr, (uint8_t)state->RegisterFile[rs2]);
+        state->wr_len = 1;
+        state->wdata = (uint8_t)state->RegisterFile[rs2];
       } else if (is_sh) {
-        MEMORY_IOMEM_STORE(state, addr, (uint16_t)state->RegisterFile[rs2]);
+        state->wr_len = 2;
+        state->wdata = (uint16_t)state->RegisterFile[rs2];
       } else if (is_sw) {
-        MEMORY_IOMEM_STORE(state, addr, (uint32_t)state->RegisterFile[rs2]);
+        state->wr_len = 4;
+        state->wdata = (uint32_t)state->RegisterFile[rs2];
       }
-    } else
-#endif
-    {
-      if (is_sb) {
-        SB(state, addr, state->RegisterFile[rs2]);
-      } else if (is_sh) {
-        SH(state, addr, state->RegisterFile[rs2]);
-      } else if (is_sw) {
-        SW(state, addr, state->RegisterFile[rs2]);
-      }
-    }
   } else if (is_load) {
-   {
       state->busaddr = addr;
       if (is_lb) state->rd_len = -1;
       if (is_lbu) state->rd_len = 1;
       if (is_lh) state->rd_len = -2;
       if (is_lhu) state->rd_len = 2;
       if (is_lw) state->rd_len = 4;
-    }
   } else if (is_lui) {
   } else if (is_auipc) {
   } else if (is_jal) {
@@ -431,16 +421,27 @@ void rv32i_kian_execute(struct rv32i_kian_state_t *state, uint32_t instr) {
 void rv32i_kian_retire(struct rv32i_kian_state_t *state)
 {
     uint32_t result;
-    if (!state->wb_reg)
-      return;
-
 #ifdef RISCV32_KIAN_IO_BASE    
     int is_io = state->busaddr >= RISCV32_KIAN_IO_BASE;
-    if(is_io)
-      result = MEMORY_IOMEM_LOAD(state, state->busaddr);
 #else
 	int is_io = 0;
 #endif
+
+	if(is_io && state->wr_len)
+		MEMORY_IOMEM_STORE(state, state->busaddr, state->wdata);
+	else
+    switch(state->wr_len)
+    {
+    	case 4: SW(state, state->busaddr, state->wdata); break;
+    	case 2: SH(state, state->busaddr, state->wdata); break;
+    	case 1: SB(state, state->busaddr, state->wdata); break;
+    }
+    
+    if (!state->wb_reg)
+      return;
+
+    if(is_io)
+      result = MEMORY_IOMEM_LOAD(state, state->busaddr);
 
     switch(state->rd_len)
     {
